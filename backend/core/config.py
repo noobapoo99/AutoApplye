@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     def serpapi_key(self) -> str:
         return self.SERPAPI_KEY
 
+    @property
+    def resume_match_threshold(self) -> float:
+        return self.RESUME_MATCH_THRESHOLD
+
 
 @lru_cache()
 def get_settings() -> Settings:
