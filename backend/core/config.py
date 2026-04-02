@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     def hallucination_threshold(self) -> float:
         return self.HALLUCINATION_THRESHOLD
 
+    @property
+    def serpapi_key(self) -> str:
+        return self.SERPAPI_KEY
+
 
 @lru_cache()
 def get_settings() -> Settings:
