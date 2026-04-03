@@ -58,6 +58,11 @@ export interface FlaggedJob {
   last_updated: string | null;
 }
 
+export interface ApplicationDetail {
+  application: Application;
+  email_threads: EmailThread[];
+}
+
 export interface Stats {
   total_applications: number;
   status_breakdown: Record<string, number>;

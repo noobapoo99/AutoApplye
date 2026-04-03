@@ -75,7 +75,7 @@ services:
     depends_on:
       api:
         condition: service_started
-    command: python workers/worker.py
+    command: python -m workers.worker
 
   worker-resume:
     build:
@@ -93,7 +93,7 @@ services:
     depends_on:
       api:
         condition: service_started
-    command: python workers/worker.py
+    command: python -m workers.worker
 
   worker-application:
     build:
@@ -111,7 +111,7 @@ services:
     depends_on:
       api:
         condition: service_started
-    command: python workers/worker.py
+    command: python -m workers.worker
 
   worker-gmail:
     build:
@@ -129,7 +129,7 @@ services:
     depends_on:
       api:
         condition: service_started
-    command: python workers/worker.py
+    command: python -m workers.worker
 
   frontend:
     build:

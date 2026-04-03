@@ -13,7 +13,7 @@ import agents.resume_agent
 import agents.application_agent
 import agents.gmail_agent
 
-from core.queue import queue_manager, QUEUES
+from core.queue import queue_manager, JD_RAW, JD_ENRICHED, JD_READY
 from agents.base import AgentFactory
 
 logger = structlog.get_logger()
@@ -21,16 +21,16 @@ WORKER_TYPE = os.environ.get("WORKER_TYPE", "research")
 
 # Maps worker type → which queue to consume
 QUEUE_MAP = {
-    "research":    "JD_RAW",
-    "resume":      "JD_ENRICHED",
-    "application": "JD_READY",
+    "research":    JD_RAW,
+    "resume":      JD_ENRICHED,
+    "application": JD_READY,
 }
 
 async def run_queue_worker():
     queue_key = QUEUE_MAP[WORKER_TYPE]
     await queue_manager.connect()
     agent = AgentFactory.create(WORKER_TYPE)
-    logger.info("Worker started", type=WORKER_TYPE, queue=QUEUES[queue_key])
+    logger.info("Worker started", type=WORKER_TYPE, queue=queue_key)
 
     async def handle(payload: dict):
         await agent.run(payload)
