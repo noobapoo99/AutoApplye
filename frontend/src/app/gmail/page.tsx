@@ -1,108 +1,74 @@
 "use client";
+import { useState } from 'react';
+import useSWR from 'swr';
+import { getEmailThreads } from '@/lib/api';
+import { Mail } from 'lucide-react';
+import EmailThreadCard from '@/components/ui/EmailThreadCard';
 
-import useSWR from "swr";
-import { format } from "date-fns";
-import { Inbox, MailSearch, Reply } from "lucide-react";
-
-import { getEmailThreads } from "@/lib/api";
-import { cn } from "@/lib/utils";
-
-const classificationStyles: Record<string, string> = {
-  interview_invite: "border-status-interview/25 bg-status-interview/15 text-status-interview",
-  rejection: "border-status-rejected/25 bg-status-rejected/15 text-status-rejected",
-  assessment: "border-status-applied/25 bg-status-applied/15 text-status-applied",
-  follow_up_needed: "border-status-flagged/25 bg-status-flagged/15 text-status-flagged",
-  other: "border-status-withdrawn/25 bg-status-withdrawn/15 text-status-withdrawn",
-};
+type FilterType = "all" | "interview_invite" | "assessment" | "follow_up_needed" | "rejection";
 
 export default function GmailPage() {
-  const { data: emails = [], isLoading } = useSWR("emails", getEmailThreads);
+  const { data: threads } = useSWR('emails', getEmailThreads, { refreshInterval: 30000 });
+  const [activeFilter, setActiveFilter] = useState<FilterType>("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const filteredThreads = activeFilter === "all"
+    ? threads ?? []
+    : (threads ?? []).filter(t => t.classification === activeFilter);
+
+  const filterTabs: { label: string; value: FilterType }[] = [
+    { label: "All", value: "all" },
+    { label: "Interview", value: "interview_invite" },
+    { label: "Assessment", value: "assessment" },
+    { label: "Follow-up", value: "follow_up_needed" },
+    { label: "Rejected", value: "rejection" }
+  ];
 
   return (
-    <div className="space-y-6">
-      <section className="panel p-6">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Gmail Tracker
-            </p>
-            <h2 className="text-2xl font-semibold text-slate-950 dark:text-white">
-              Recent email threads tied to applications
-            </h2>
-          </div>
-          <div className="rounded-2xl border border-sky-400/25 bg-sky-400/10 p-3 text-sky-700 dark:text-sky-300">
-            <Inbox className="h-5 w-5" />
-          </div>
+    <div className="px-6 py-6 min-h-screen">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-white text-2xl font-bold">Gmail Inbox</h1>
+        <button
+          onClick={() => window.open('/auth/gmail', '_blank')}
+          className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 text-sm rounded-lg px-3 py-1.5 transition-colors"
+        >
+          <Mail size={14} /> Connect Gmail
+        </button>
+      </div>
+
+      <div className="flex gap-2 mb-5 flex-wrap">
+        {filterTabs.map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => setActiveFilter(tab.value)}
+            className={`rounded-full px-3 py-1 text-sm cursor-pointer transition-colors ${
+              activeFilter === tab.value
+                ? 'bg-blue-600 text-white'
+                : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {filteredThreads.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          {filteredThreads.map((thread) => (
+            <EmailThreadCard
+              key={thread.id}
+              thread={thread}
+              isExpanded={expandedId === thread.id}
+              onToggle={() => setExpandedId(expandedId === thread.id ? null : thread.id)}
+            />
+          ))}
         </div>
-      </section>
-
-      <section className="space-y-4">
-        {isLoading ? (
-          <div className="panel p-6 text-sm text-slate-500 dark:text-slate-400">
-            Loading recent Gmail activity...
-          </div>
-        ) : emails.length === 0 ? (
-          <div className="panel p-6 text-sm text-slate-500 dark:text-slate-400">
-            No tracked email threads yet.
-          </div>
-        ) : (
-          emails.map((email) => (
-            <article key={email.id} className="panel p-6">
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wide",
-                      classificationStyles[email.classification] ??
-                        classificationStyles.other,
-                    )}
-                  >
-                    {email.classification.replace(/_/g, " ")}
-                  </span>
-                  <span className="text-sm text-slate-500 dark:text-slate-400">
-                    {email.received_at
-                      ? format(new Date(email.received_at), "PPP p")
-                      : "Unknown received time"}
-                  </span>
-                  <span className="text-sm text-slate-500 dark:text-slate-400">
-                    DLQ attempts: {email.dlq_attempts}
-                  </span>
-                </div>
-
-                <div>
-                  <h3 className="text-xl font-semibold text-slate-950 dark:text-white">
-                    {email.subject}
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                    From {email.sender}
-                  </p>
-                </div>
-
-                <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-                  <div className="panel-muted p-4">
-                    <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                      <MailSearch className="h-4 w-4" />
-                      AI Summary
-                    </div>
-                    <p className="text-sm leading-6 text-slate-700 dark:text-slate-300">
-                      {email.ai_summary || "No summary was generated for this thread."}
-                    </p>
-                  </div>
-                  <div className="panel-muted p-4">
-                    <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                      <Reply className="h-4 w-4" />
-                      Draft Follow-up
-                    </div>
-                    <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-300">
-                      {email.draft_followup || "No follow-up draft needed."}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </article>
-          ))
-        )}
-      </section>
+      ) : threads !== undefined ? (
+        <div className="py-20 text-center">
+          <Mail size={40} className="text-zinc-700 mx-auto mb-3" />
+          <p className="text-zinc-500 text-sm">No emails tracked yet</p>
+        </div>
+      ) : null}
     </div>
   );
 }
