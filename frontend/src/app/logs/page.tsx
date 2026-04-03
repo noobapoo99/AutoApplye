@@ -1,72 +1,94 @@
 "use client";
+import { useState, useEffect, useRef } from 'react';
+import { useAgentLogs } from '@/lib/websocket';
+import { LogEvent } from '@/types';
+import LogEntry from '@/components/agents/LogEntry';
 
-import { Activity, Wifi, WifiOff } from "lucide-react";
-
-import { useAgentLogs } from "@/lib/websocket";
+const formatTime = (iso: string) => {
+  return new Date(iso).toTimeString().slice(0, 8);
+};
 
 export default function LogsPage() {
   const { logs, connected } = useAgentLogs();
+  const [localLogs, setLocalLogs] = useState<LogEvent[]>([]);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setLocalLogs(logs);
+  }, [logs]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [localLogs]);
+
+  const handleClear = () => {
+    setLocalLogs([]);
+  };
+
+  const handleExport = () => {
+    const blob = new Blob([JSON.stringify(localLogs, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'autoapply-logs.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const uniquePipelines = new Set(localLogs.map(l => l.pipeline_id).filter(Boolean)).size;
 
   return (
-    <div className="space-y-6">
-      <section className="panel p-6">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Live Agent Feed
-            </p>
-            <h2 className="text-2xl font-semibold text-slate-950 dark:text-white">
-              Pipeline events streaming from the backend
-            </h2>
-          </div>
-          <div
-            className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-medium ${
-              connected
-                ? "border-status-interview/25 bg-status-interview/10 text-status-interview"
-                : "border-status-withdrawn/25 bg-status-withdrawn/10 text-status-withdrawn"
-            }`}
-          >
-            {connected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
-            {connected ? "Connected" : "Disconnected"}
-          </div>
+    <div className="bg-zinc-950 min-h-screen flex flex-col text-white">
+      {/* HEADER */}
+      <div className="flex justify-between items-center px-6 py-4 border-b border-zinc-800 shrink-0">
+        <h1 className="text-white text-xl font-bold font-mono">Agent Logs</h1>
+        <div className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400 animate-pulse' : 'bg-red-500'}`} />
+          <span className={`text-xs font-mono ${connected ? 'text-green-400' : 'text-red-400'}`}>
+            {connected ? 'LIVE' : 'DISCONNECTED'}
+          </span>
         </div>
-      </section>
+        <div className="flex gap-2">
+          <button onClick={handleClear} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs rounded px-3 py-1.5 transition-colors">
+            Clear
+          </button>
+          <button onClick={handleExport} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs rounded px-3 py-1.5 transition-colors">
+            Export
+          </button>
+        </div>
+      </div>
 
-      <section className="panel overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-slate-200/70 px-6 py-4 text-sm font-medium text-slate-700 dark:border-slate-800 dark:text-slate-200">
-          <Activity className="h-4 w-4" />
-          Event Stream
+      {/* STATS ROW */}
+      <div className="grid grid-cols-3 gap-4 px-6 py-4 border-b border-zinc-800 shrink-0">
+        <div>
+          <p className="text-zinc-500 text-xs uppercase tracking-wider">Events</p>
+          <p className="text-white text-xl font-mono font-bold">{localLogs.length}</p>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto">
-          {logs.length === 0 ? (
-            <div className="p-6 text-sm text-slate-500 dark:text-slate-400">
-              Waiting for pipeline events. Start a search or review action to see logs
-              appear here.
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-200/70 dark:divide-slate-800">
-              {logs
-                .slice()
-                .reverse()
-                .map((log, index) => (
-                  <article key={`${log.timestamp}-${index}`} className="p-6">
-                    <div className="mb-3 flex flex-wrap items-center gap-3">
-                      <span className="rounded-full border border-sky-400/25 bg-sky-400/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">
-                        {log.event}
-                      </span>
-                      <span className="text-xs text-slate-500 dark:text-slate-400">
-                        {new Date(log.timestamp).toLocaleString()}
-                      </span>
-                    </div>
-                    <pre className="overflow-x-auto rounded-2xl bg-slate-950 px-4 py-4 text-xs leading-6 text-slate-100">
-                      {JSON.stringify(log, null, 2)}
-                    </pre>
-                  </article>
-                ))}
-            </div>
-          )}
+        <div>
+          <p className="text-zinc-500 text-xs uppercase tracking-wider">Pipelines</p>
+          <p className="text-white text-xl font-mono font-bold">{uniquePipelines}</p>
         </div>
-      </section>
+        <div>
+          <p className="text-zinc-500 text-xs uppercase tracking-wider">Last event</p>
+          <p className="text-white text-xl font-mono font-bold">
+            {localLogs.length > 0 && localLogs[0] ? formatTime(localLogs[0].timestamp) : "—"}
+          </p>
+        </div>
+      </div>
+
+      {/* LOG FEED */}
+      <div className="flex-1 overflow-y-auto px-0 py-2">
+        {localLogs.length === 0 ? (
+          <div className="py-20 text-center text-zinc-600 text-sm font-mono">
+            Waiting for agent events...<span className="animate-pulse text-zinc-400">█</span>
+          </div>
+        ) : (
+          localLogs.map((e, i) => (
+            <LogEntry event={e} key={`${e.timestamp}-${i}`} />
+          ))
+        )}
+        <div ref={bottomRef} />
+      </div>
     </div>
   );
 }
