@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-research
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-research
+  template:
+    metadata:
+      labels:
+        app: worker-research
+    spec:
+      containers:
+        - name: worker
+          image: autoapply-api:latest
+          env:
+            - name: WORKER_TYPE
+              value: research
+          envFrom:
+            - secretRef:
+                name: autoapply-secrets
+          resources:
+            requests:
+              cpu: "125m"
+              memory: "256Mi"
+            limits:
+              cpu: "250m"
+              memory: "512Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-resume
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-resume
+  template:
+    metadata:
+      labels:
+        app: worker-resume
+    spec:
+      containers:
+        - name: worker
+          image: autoapply-api:latest
+          env:
+            - name: WORKER_TYPE
+              value: resume
+          envFrom:
+            - secretRef:
+                name: autoapply-secrets
+          resources:
+            requests:
+              cpu: "125m"
+              memory: "256Mi"
+            limits:
+              cpu: "250m"
+              memory: "512Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-application
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-application
+  template:
+    metadata:
+      labels:
+        app: worker-application
+    spec:
+      containers:
+        - name: worker
+          image: autoapply-api:latest
+          env:
+            - name: WORKER_TYPE
+              value: application
+          envFrom:
+            - secretRef:
+                name: autoapply-secrets
+          resources:
+            requests:
+              cpu: "125m"
+              memory: "256Mi"
+            limits:
+              cpu: "250m"
+              memory: "512Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-gmail
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-gmail
+  template:
+    metadata:
+      labels:
+        app: worker-gmail
+    spec:
+      containers:
+        - name: worker
+          image: autoapply-api:latest
+          env:
+            - name: WORKER_TYPE
+              value: gmail
+          envFrom:
+            - secretRef:
+                name: autoapply-secrets
+          resources:
+            requests:
+              cpu: "125m"
+              memory: "256Mi"
+            limits:
+              cpu: "250m"
+              memory: "512Mi"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker-research-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: worker-research
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker-resume-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: worker-resume
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

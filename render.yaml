@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: autoapply-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && playwright install chromium && playwright install-deps chromium
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+
+  - type: worker
+    name: worker-research
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python workers/worker.py
+    plan: free
+    envVars:
+      - key: WORKER_TYPE
+        value: research
+
+  - type: worker
+    name: worker-resume
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python workers/worker.py
+    plan: free
+    envVars:
+      - key: WORKER_TYPE
+        value: resume
+
+  - type: worker
+    name: worker-gmail
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python workers/worker.py
+    plan: free
+    envVars:
+      - key: WORKER_TYPE
+        value: gmail
