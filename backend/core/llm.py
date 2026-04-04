@@ -19,8 +19,6 @@ settings = get_settings()
 
 P = ParamSpec("P")
 T = TypeVar("T")
-GEMINI_CACHE_TTL_SECONDS = 24 * 60 * 60
-
 
 def with_exponential_backoff(
     max_retries: int = 5,
@@ -63,6 +61,7 @@ def with_exponential_backoff(
     return decorator
 
 
+'''
 class GeminiClient:
     @with_exponential_backoff()
     async def complete(
@@ -71,77 +70,55 @@ class GeminiClient:
         system: str | None = None,
         use_cache: bool = True,
     ) -> str:
-        cache_key = make_cache_key(
-            "gemini",
-            "complete",
-            settings.gemini_flash_model,
-            system or "",
-            prompt,
-        )
-        if use_cache:
-            cached_value = await cache_get(cache_key)
-            if isinstance(cached_value, str):
-                return cached_value
-
-        def _run() -> str:
-            import google.generativeai as genai
-
-            genai.configure(api_key=settings.gemini_api_key)
-            model = genai.GenerativeModel(
-                settings.gemini_flash_model,
-                system_instruction=system or None,
-            )
-            response = model.generate_content(prompt)
-            text = getattr(response, "text", None)
-            if not text:
-                raise ValueError("Gemini returned an empty response")
-            return text.strip()
-
-        result = await asyncio.to_thread(_run)
-        if use_cache:
-            await cache_set(cache_key, result, GEMINI_CACHE_TTL_SECONDS)
-        return result
+        pass
 
     @with_exponential_backoff()
     async def embed(self, text: str) -> list[float]:
-        def _run() -> list[float]:
-            import google.generativeai as genai
+        pass
+'''
 
-            genai.configure(api_key=settings.gemini_api_key)
-            response = genai.embed_content(
-                model=settings.gemini_embedding_model,
-                content=text,
-                task_type="RETRIEVAL_DOCUMENT",
-            )
-            embedding = self._extract_embedding(response)
-            if not embedding:
-                raise ValueError("Gemini returned an empty embedding")
-            return [float(value) for value in embedding]
 
-        return await asyncio.to_thread(_run)
+class OllamaClient:
+    def __init__(self) -> None:
+        pass
 
-    @staticmethod
-    def _extract_embedding(response: Any) -> list[float] | None:
-        if isinstance(response, dict):
-            embedding = response.get("embedding")
-            if isinstance(embedding, dict):
-                values = embedding.get("values")
-                if isinstance(values, list):
-                    return values
-            if isinstance(embedding, list):
-                return embedding
+    @with_exponential_backoff()
+    async def complete(self, prompt: str, system: str | None = None) -> str:
+        import httpx
 
-        embedding = getattr(response, "embedding", None)
-        if isinstance(embedding, dict):
-            values = embedding.get("values")
-            if isinstance(values, list):
-                return values
-        values = getattr(embedding, "values", None)
-        if isinstance(values, list):
-            return values
-        if isinstance(embedding, list):
-            return embedding
-        return None
+        url = f"{settings.ollama_url.rstrip('/')}/api/chat"
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": settings.ollama_model,
+            "messages": messages,
+            "stream": False,
+        }
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            return data["message"]["content"].strip()
+
+    @with_exponential_backoff()
+    async def embed(self, text: str) -> list[float]:
+        import httpx
+
+        url = f"{settings.ollama_url.rstrip('/')}/api/embeddings"
+        payload = {
+            "model": settings.ollama_embedding_model,
+            "prompt": text,
+        }
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            return data["embedding"]
 
 
 class GroqClient:
@@ -163,8 +140,9 @@ class GroqClient:
         messages.append({"role": "user", "content": prompt})
 
         response = await self._get_client().chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama-3.3-70b-versatile",
             messages=messages,
+            max_tokens=2048,
         )
         content = response.choices[0].message.content
         if not content:
@@ -174,8 +152,9 @@ class GroqClient:
 
 class LLMClient:
     def __init__(self) -> None:
-        self._gemini = GeminiClient()
+        # self._gemini = GeminiClient()
         self._groq = GroqClient()
+        self._ollama = OllamaClient()
 
     async def complete(
         self,
@@ -183,18 +162,15 @@ class LLMClient:
         system: str | None = None,
         use_cache: bool = True,
     ) -> str:
+        # Try Groq 70B first, and if it fails (rate limit, etc), fallback to Ollama locally.
         try:
-            return await self._gemini.complete(
-                prompt=prompt,
-                system=system,
-                use_cache=use_cache,
-            )
-        except Exception as exc:
-            logger.exception("Gemini completion failed, falling back to Groq: %s", exc)
             return await self._groq.complete(prompt=prompt, system=system)
+        except Exception as exc:
+            logger.exception("Groq completion failed, falling back to Ollama: %s", exc)
+            return await self._ollama.complete(prompt=prompt, system=system)
 
     async def embed(self, text: str) -> list[float]:
-        return await self._gemini.embed(text)
+        return await self._ollama.embed(text)
 
 
 class HallucinationScorer:
@@ -213,8 +189,8 @@ class HallucinationScorer:
     async def score(self, output: Any, source_data: Any) -> dict[str, Any]:
         score = 0
         breakdown: dict[str, dict[str, Any]] = {}
-        serialized_output = json.dumps(output, default=str, ensure_ascii=False)
-        serialized_source = json.dumps(source_data, default=str, ensure_ascii=False)
+        serialized_output = json.dumps(output, default=str, ensure_ascii=False)[:3000]
+        serialized_source = json.dumps(source_data, default=str, ensure_ascii=False)[:3000]
 
         for key, description in self.CRITERIA:
             prompt = (
@@ -273,8 +249,9 @@ hallucination_scorer = HallucinationScorer(llm_client)
 
 
 __all__ = [
-    "GeminiClient",
+    # "GeminiClient",
     "GroqClient",
+    "OllamaClient",
     "HallucinationScorer",
     "LLMClient",
     "hallucination_scorer",

@@ -10,10 +10,13 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    GEMINI_API_KEY: str
+    GEMINI_API_KEY: str | None = None
     GROQ_API_KEY: str
-    GEMINI_FLASH_MODEL: str
-    GEMINI_EMBEDDING_MODEL: str
+    GEMINI_FLASH_MODEL: str | None = None
+    GEMINI_EMBEDDING_MODEL: str | None = None
+    OLLAMA_URL: str = "http://host.docker.internal:11434"
+    OLLAMA_MODEL: str = "llama3:latest"
+    OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
     RABBITMQ_URL: str
     REDIS_URL: str
     DATABASE_URL: str
@@ -40,7 +43,7 @@ class Settings(BaseSettings):
         return self.DATABASE_URL
 
     @property
-    def gemini_api_key(self) -> str:
+    def gemini_api_key(self) -> str | None:
         return self.GEMINI_API_KEY
 
     @property
@@ -48,12 +51,24 @@ class Settings(BaseSettings):
         return self.GROQ_API_KEY
 
     @property
-    def gemini_flash_model(self) -> str:
+    def gemini_flash_model(self) -> str | None:
         return self.GEMINI_FLASH_MODEL
 
     @property
-    def gemini_embedding_model(self) -> str:
+    def gemini_embedding_model(self) -> str | None:
         return self.GEMINI_EMBEDDING_MODEL
+
+    @property
+    def ollama_url(self) -> str:
+        return self.OLLAMA_URL
+
+    @property
+    def ollama_model(self) -> str:
+        return self.OLLAMA_MODEL
+
+    @property
+    def ollama_embedding_model(self) -> str:
+        return self.OLLAMA_EMBEDDING_MODEL
 
     @property
     def rabbitmq_url(self) -> str:

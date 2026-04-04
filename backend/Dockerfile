@@ -5,6 +5,7 @@ WORKDIR /app
 # Install system dependencies for Playwright, PostgreSQL client, etc.
 RUN apt-get update && apt-get install -y \
     build-essential \
+    tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies first to cache them

@@ -122,7 +122,7 @@ class JDScoutAgent(BaseAgent):
             async with async_playwright() as playwright:
                 browser = await playwright.chromium.launch(headless=True)
                 page = await browser.new_page()
-                await page.goto(url, wait_until="networkidle")
+                await page.goto(url, wait_until="domcontentloaded")
                 await page.wait_for_timeout(2000)
                 await page.screenshot(path=str(screenshot_path), full_page=True)
                 dom_text = await page.evaluate("document.body.innerText")
@@ -228,7 +228,7 @@ class JDScoutAgent(BaseAgent):
             '"summary": ""'
             "}\n\n"
             "Job text:\n"
-            f"{text[:15000]}"
+            f"{text[:5000]}"
         )
 
         try:

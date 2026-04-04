@@ -4,10 +4,13 @@ from unittest.mock import AsyncMock
 @pytest.fixture
 def mock_settings():
     class FakeSettings:
-        gemini_api_key = "test-key"
+        gemini_api_key = None
         groq_api_key = "test-key"
-        gemini_flash_model = "gemini-1.5-flash"
-        gemini_embedding_model = "models/text-embedding-004"
+        gemini_flash_model = None
+        gemini_embedding_model = None
+        ollama_url = "http://localhost:11434"
+        ollama_model = "llama3:latest"
+        ollama_embedding_model = "nomic-embed-text"
         rabbitmq_url = "amqp://guest:guest@localhost/"
         redis_url = "redis://localhost"
         database_url = "postgresql://test:test@localhost/test"
