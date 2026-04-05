@@ -9,11 +9,26 @@ const HEARTBEAT_MS = 25000;
 const MAX_LOGS = 200;
 
 function getSocketUrl(): string | null {
-  const baseUrl = process.env.NEXT_PUBLIC_WS_URL?.replace(/\/$/, "");
-  if (!baseUrl) {
-    return null;
+  // Try dedicated WS env var first
+  const wsEnv = process.env.NEXT_PUBLIC_WS_URL?.replace(/\/$/, "");
+  if (wsEnv) return `${wsEnv}/ws/logs`;
+
+  // Derive from API URL
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
+  if (apiUrl) {
+    const wsUrl = apiUrl
+      .replace(/^https:\/\//, "wss://")
+      .replace(/^http:\/\//, "ws://");
+    return `${wsUrl}/ws/logs`;
   }
-  return `${baseUrl}/ws/logs`;
+
+  // Fallback: use current page host
+  if (typeof window !== "undefined") {
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    return `${proto}://${window.location.host}/ws/logs`;
+  }
+
+  return null;
 }
 
 export function useAgentLogs() {

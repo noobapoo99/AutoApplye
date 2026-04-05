@@ -11,8 +11,10 @@ from uuid import uuid4
 
 from fastapi import BackgroundTasks
 from fastapi import FastAPI
+from fastapi import File
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import UploadFile
 from fastapi import WebSocket
 from fastapi import WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +35,10 @@ from core.config import get_settings
 from core.queue import JD_READY
 from core.queue import queue_manager
 from core.redis_client import get_redis_client
+from core.resume_store import get_resume_metadata
+from core.resume_store import get_user_profile
+from core.resume_store import save_resume
+from core.resume_store import save_user_profile
 from db.models import Application
 from db.models import ApplicationStatus
 from db.models import AsyncSessionLocal
@@ -122,6 +128,7 @@ class UserDataRequest(BaseModel):
     email: str
     phone: str
     linkedin_url: str
+    github_url: str | None = None
 
 
 @app.websocket("/ws/logs")
@@ -396,6 +403,66 @@ async def gmail_auth_callback(code: str = Query(...)) -> dict[str, str]:
         "status": "success",
         "message": "Gmail OAuth callback validated successfully.",
     }
+
+
+@app.post("/api/resume/upload")
+async def upload_resume(
+    file: UploadFile = File(...),
+) -> dict[str, Any]:
+    """
+    Upload a user resume (.docx or .pdf).
+    The file is stored as the canonical `base_resume.docx` used by all agents.
+    """
+    if file.filename is None:
+        raise HTTPException(status_code=400, detail="No filename provided")
+
+    allowed_extensions = {".pdf", ".docx"}
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in allowed_extensions:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid file type '{suffix}'. Only .pdf and .docx are accepted.",
+        )
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    try:
+        metadata = save_resume(file_bytes, file.filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to save resume: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to process resume file") from exc
+
+    return {"status": "ok", **metadata}
+
+
+@app.get("/api/resume/status")
+async def resume_status() -> dict[str, Any]:
+    """Return whether a base resume is stored and its metadata."""
+    metadata = get_resume_metadata()
+    if metadata is None:
+        return {"uploaded": False}
+    return metadata
+
+
+@app.get("/api/user/profile")
+async def get_profile() -> dict[str, Any]:
+    """Return the stored user profile (name, email, phone, LinkedIn…)."""
+    profile = get_user_profile()
+    if profile is None:
+        return {}
+    return profile
+
+
+@app.post("/api/user/profile")
+async def save_profile(request: UserDataRequest) -> dict[str, Any]:
+    """Persist user profile used by the application agent to fill forms."""
+    profile_data = request.model_dump(exclude_none=True)
+    saved = save_user_profile(profile_data)
+    return {"status": "ok", **saved}
 
 
 @app.get("/health")

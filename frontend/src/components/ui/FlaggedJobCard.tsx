@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 interface FlaggedJobCardProps {
   job: FlaggedJob;
-  onDecision: (job_id: string, decision: "proceed" | "skip") => Promise<void>;
+  onDecision: (job_id: string, decision: "proceed" | "skip", appId: string) => Promise<void>;
 }
 
 export default function FlaggedJobCard({ job, onDecision }: FlaggedJobCardProps) {
@@ -15,7 +15,7 @@ export default function FlaggedJobCard({ job, onDecision }: FlaggedJobCardProps)
     setLoading(decision);
     setError(null);
     try {
-      await onDecision(job.id, decision);
+      await onDecision(job.job_id, decision, job.id);
     } catch (e: any) {
       setError(e.message || "An error occurred");
     } finally {

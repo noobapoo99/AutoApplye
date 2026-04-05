@@ -11,10 +11,14 @@ export default function FlaggedPage() {
 
   const visibleJobs = (flagged ?? []).filter(j => !dismissedIds.has(j.id));
 
-  const handleDecision = async (job_id: string, decision: "proceed" | "skip") => {
-    await submitReviewDecision(job_id, decision);
-    setDismissedIds(prev => new Set([...prev, job_id]));
-    mutate();
+  const handleDecision = async (job_id: string, decision: "proceed" | "skip", appId: string) => {
+    try {
+      await submitReviewDecision(job_id, decision);
+      setDismissedIds(prev => new Set([...prev, appId]));
+      mutate();
+    } catch (e: any) {
+      console.error("Review decision failed:", e);
+    }
   };
 
   return (

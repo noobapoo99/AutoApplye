@@ -350,7 +350,16 @@ class ApplicationAgent(BaseAgent):
         scorer: Any | None = None,
     ) -> None:
         super().__init__(llm=llm, scorer=scorer)
-        self.user_data = user_data or {}
+        if user_data:
+            self.user_data = user_data
+        else:
+            # Load from persisted profile if available
+            try:
+                from core.resume_store import get_user_profile
+                profile = get_user_profile()
+                self.user_data = profile or {}
+            except Exception:
+                self.user_data = {}
 
     def validate_input(self, payload: Any) -> bool:
         if not isinstance(payload, dict):
@@ -488,6 +497,34 @@ class ApplicationAgent(BaseAgent):
         result: dict[str, Any],
         original_payload: Any,
     ) -> None:
+        # Persist final application status to DB
+        try:
+            from db.models import ApplicationStatus
+            from db.persistence import update_application_status
+            from datetime import datetime, timezone
+
+            job_id = result.get("job_id")
+            success = bool(result.get("success"))
+            if job_id:
+                status = (
+                    ApplicationStatus.applied if success else ApplicationStatus.applying
+                )
+                applied_at = None
+                if success:
+                    applied_at_raw = result.get("applied_at")
+                    applied_at = (
+                        datetime.fromisoformat(applied_at_raw)
+                        if applied_at_raw else datetime.now(timezone.utc)
+                    )
+                await update_application_status(
+                    job_id,
+                    status,
+                    applied_at=applied_at,
+                    form_fill_result=result.get("form_fill_result"),
+                )
+        except Exception as exc:
+            logger.exception("Failed to persist application status to DB: %s", exc)
+
         logger.info(
             "Application agent completed for job_id=%s success=%s error=%s",
             result.get("job_id"),

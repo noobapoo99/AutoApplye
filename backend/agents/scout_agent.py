@@ -86,7 +86,14 @@ class JDScoutAgent(BaseAgent):
         result: dict[str, Any],
         original_payload: Any,
     ) -> None:
+        from db.persistence import upsert_job
         for job_payload in result.get("discovered_jobs", []):
+            # Persist job to DB first so it appears on frontend
+            try:
+                await upsert_job(job_payload)
+            except Exception as exc:
+                logger.exception("Failed to persist job %s to DB: %s", job_payload.get("job_id"), exc)
+            # Then publish to research queue
             await queue_manager.publish(JD_RAW, job_payload, "jd.raw.new")
 
     @with_exponential_backoff()

@@ -84,3 +84,20 @@ export interface LogEvent {
   status?: string;
   [key: string]: unknown;
 }
+
+export interface ResumeStatus {
+  uploaded: boolean;
+  filename?: string;
+  size_bytes?: number;
+  last_modified?: string;
+}
+
+export interface UserProfile {
+  full_name: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  linkedin_url: string;
+  github_url?: string;
+}

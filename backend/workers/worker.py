@@ -52,7 +52,7 @@ async def run_gmail_worker():
             async with AsyncSessionLocal() as db:
                 result = await db.execute(
                     select(Application).where(
-                        Application.status == ApplicationStatus.APPLIED
+                        Application.status == ApplicationStatus.applied
                     )
                 )
                 applications = result.scalars().all()

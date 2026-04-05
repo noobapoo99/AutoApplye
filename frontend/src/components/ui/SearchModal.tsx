@@ -1,8 +1,9 @@
 "use client";
 import * as Dialog from '@radix-ui/react-dialog';
-import { useState } from 'react';
-import { triggerJobSearch } from '@/lib/api';
-import { Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { triggerJobSearch, getResumeStatus } from '@/lib/api';
+import { Loader2, AlertTriangle } from 'lucide-react';
+import Link from 'next/link';
 
 interface SearchModalProps {
   open: boolean;
@@ -15,6 +16,16 @@ export default function SearchModal({ open, onClose }: SearchModalProps) {
   const [strategy, setStrategy] = useState('keyword_injection');
   const [loading, setLoading] = useState(false);
   const [showToast, setShowToast] = useState(false);
+  const [hasResume, setHasResume] = useState<boolean | null>(null);
+
+  // Check resume status when modal opens
+  useEffect(() => {
+    if (open) {
+      getResumeStatus()
+        .then((s) => setHasResume(s.uploaded))
+        .catch(() => setHasResume(false));
+    }
+  }, [open]);
 
   const handleSubmit = async () => {
     setLoading(true);
@@ -40,6 +51,25 @@ export default function SearchModal({ open, onClose }: SearchModalProps) {
           <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" />
           <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-full max-w-md z-50">
             <Dialog.Title className="text-white text-xl font-semibold mb-6">Find Jobs</Dialog.Title>
+
+            {/* Resume guard banner */}
+            {hasResume === false && (
+              <div className="flex items-start gap-3 bg-amber-950/40 border border-amber-800/40 rounded-xl p-4 mb-5">
+                <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-amber-200 text-sm">
+                    No resume uploaded yet. The pipeline will use a placeholder.
+                  </p>
+                  <Link
+                    href="/settings"
+                    onClick={onClose}
+                    className="text-amber-400 text-sm underline hover:text-amber-300 mt-1 inline-block"
+                  >
+                    Upload your resume in Settings →
+                  </Link>
+                </div>
+              </div>
+            )}
             
             <div className="space-y-4">
               <div>
@@ -83,9 +113,11 @@ export default function SearchModal({ open, onClose }: SearchModalProps) {
 
             <button
               onClick={handleSubmit}
-              disabled={loading}
+              disabled={loading || !query.trim()}
               className={`w-full mt-6 py-2.5 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2 ${
-                loading ? 'bg-blue-800 text-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white'
+                loading || !query.trim()
+                  ? 'bg-blue-800 text-blue-300 cursor-not-allowed'
+                  : 'bg-blue-600 hover:bg-blue-500 text-white'
               }`}
             >
               {loading && <Loader2 className="animate-spin w-4 h-4" />}

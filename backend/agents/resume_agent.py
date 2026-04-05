@@ -17,6 +17,7 @@ from core.config import get_settings
 from core.queue import JD_FLAGGED
 from core.queue import JD_READY
 from core.queue import queue_manager
+from core.resume_store import get_resume_text as _get_resume_text
 
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,14 @@ class ResumeEditorAgent(BaseAgent):
         result: dict[str, Any],
         original_payload: Any,
     ) -> None:
+        # Persist to DB before queuing
+        try:
+            from db.persistence import upsert_resume_version, upsert_application
+            resume_version_id = await upsert_resume_version(result)
+            await upsert_application(result, resume_version_id=resume_version_id or None)
+        except Exception as exc:
+            logger.exception("Failed to persist resume results to DB: %s", exc)
+
         if result.get("needs_human_review"):
             await queue_manager.publish(JD_FLAGGED, result, "jd.flagged.new")
             return
@@ -147,23 +156,8 @@ class ResumeEditorAgent(BaseAgent):
         await queue_manager.publish(JD_READY, result, "jd.ready.new")
 
     def _load_resume_text(self) -> str:
-        if BASE_RESUME_PATH.exists():
-            document = Document(str(BASE_RESUME_PATH))
-            paragraphs = [
-                paragraph.text.strip()
-                for paragraph in document.paragraphs
-                if paragraph.text and paragraph.text.strip()
-            ]
-            if paragraphs:
-                return "\n".join(paragraphs)
-
-        return (
-            "Dev Resume Placeholder\n"
-            "Software engineer with experience in backend systems, APIs, automation, "
-            "and production support.\n"
-            "Skills: Python, FastAPI, SQL, PostgreSQL, Docker, REST APIs.\n"
-            "Experience: Built internal tools, data pipelines, and web integrations."
-        )
+        """Load resume text via the central resume_store module."""
+        return _get_resume_text()
 
     async def _identify_gaps(
         self,

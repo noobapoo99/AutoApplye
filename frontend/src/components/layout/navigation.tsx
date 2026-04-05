@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Inbox,
   LayoutDashboard,
+  Settings2,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ const tabs = [
   { href: "/flagged", label: "Flagged Reviews", icon: AlertTriangle },
   { href: "/gmail", label: "Gmail Inbox", icon: Inbox },
   { href: "/logs", label: "Agent Logs", icon: Activity },
+  { href: "/settings", label: "Settings", icon: Settings2 },
 ];
 
 export function Navigation() {
@@ -23,7 +25,7 @@ export function Navigation() {
 
   return (
     <nav className="rounded-3xl border border-white/50 bg-white/75 p-2 shadow-panel backdrop-blur dark:border-white/10 dark:bg-slate-900/70">
-      <div className="grid gap-2 md:grid-cols-4">
+      <div className="grid gap-2 md:grid-cols-5">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const active = pathname === tab.href;

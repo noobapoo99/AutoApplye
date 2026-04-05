@@ -88,7 +88,11 @@ class QueueManager:
                 durable=True,
                 arguments=arguments,
             )
+            # Bind to both exact key and wildcard so messages with routing keys
+            # like "jd.raw.new" actually reach the "jd.raw" queue.
             await queue.bind(self._exchange, routing_key=queue_name)
+            await queue.bind(self._exchange, routing_key=f"{queue_name}.*")
+            await queue.bind(self._exchange, routing_key=f"{queue_name}.#")
             self._queues[queue_name] = queue
 
     async def publish(

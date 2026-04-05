@@ -1,6 +1,6 @@
 import axios from "axios";
 
-import type { Application, EmailThread, FlaggedJob, Stats } from "@/types";
+import type { Application, EmailThread, FlaggedJob, ResumeStatus, Stats, UserProfile } from "@/types";
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "",
@@ -73,3 +73,40 @@ export async function triggerJobSearch(
 
   return { pipeline_id: data.pipeline_id };
 }
+
+
+// ---------------------------------------------------------------------------
+// Resume management
+// ---------------------------------------------------------------------------
+
+export async function getResumeStatus(): Promise<ResumeStatus> {
+  const { data } = await api.get<ResumeStatus>("/api/resume/status");
+  return data;
+}
+
+export async function uploadResume(file: File): Promise<ResumeStatus & { status: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await api.post<ResumeStatus & { status: string }>(
+    "/api/resume/upload",
+    formData,
+    { headers: { "Content-Type": "multipart/form-data" } },
+  );
+  return data;
+}
+
+
+// ---------------------------------------------------------------------------
+// User profile
+// ---------------------------------------------------------------------------
+
+export async function getUserProfile(): Promise<UserProfile | null> {
+  const { data } = await api.get<UserProfile | Record<string, never>>("/api/user/profile");
+  if (!data || Object.keys(data).length === 0) return null;
+  return data as UserProfile;
+}
+
+export async function saveUserProfile(profile: UserProfile): Promise<void> {
+  await api.post("/api/user/profile", profile);
+}
+

@@ -45,16 +45,42 @@ class BaseAgent(ABC):
             raise ValueError(f"Invalid payload for agent '{self.agent_name}'")
 
         result = await self.process(payload)
-        hallucination_result = await self.scorer.score(result, payload)
+
+        try:
+            hallucination_result = await self.scorer.score(result, payload)
+        except Exception as exc:
+            logger.warning(
+                "Agent %s hallucination scorer raised an exception: %s — continuing",
+                self.agent_name, exc,
+            )
+            hallucination_result = {"score": 0, "max_score": 6, "passed": False, "error": str(exc)}
+
         result["hallucination_check"] = hallucination_result
 
-        logger.info(
-            "Agent %s hallucination score %s/%s passed=%s",
-            self.agent_name,
-            hallucination_result.get("score"),
-            hallucination_result.get("max_score"),
-            hallucination_result.get("passed"),
-        )
+        passed = bool(hallucination_result.get("passed"))
+        score = hallucination_result.get("score")
+        max_score = hallucination_result.get("max_score")
+
+        if passed:
+            logger.info(
+                "Agent %s hallucination score %s/%s passed=True",
+                self.agent_name, score, max_score,
+            )
+        else:
+            # Log a warning but DO NOT block the pipeline.
+            # Set a flag so downstream agents can route to human review if needed.
+            logger.warning(
+                "Agent %s hallucination score %s/%s passed=False — continuing with flagged result",
+                self.agent_name, score, max_score,
+            )
+            # Only flag for human review if the score is particularly low (< 2/6)
+            if isinstance(score, (int, float)) and isinstance(max_score, (int, float)):
+                if max_score > 0 and (score / max_score) < 0.20:
+                    result.setdefault("needs_human_review", True)
+                    result.setdefault(
+                        "flag_reason",
+                        f"Low hallucination score {score}/{max_score} — flagged for human review.",
+                    )
 
         await self.emit_result(result, payload)
         logger.info("Agent %s completed", self.agent_name)

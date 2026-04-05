@@ -140,7 +140,7 @@ class GroqClient:
         messages.append({"role": "user", "content": prompt})
 
         response = await self._get_client().chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             messages=messages,
             max_tokens=2048,
         )
@@ -148,6 +148,34 @@ class GroqClient:
         if not content:
             raise ValueError("Groq returned an empty response")
         return content.strip()
+
+
+# ---------------------------------------------------------------------------
+# Pure-Python fallback embedding (bag-of-words / TF-IDF style)
+# Used when Ollama is unavailable so the resume agent doesn't crash.
+# ---------------------------------------------------------------------------
+
+import hashlib
+import math
+import re as _re
+
+_EMBED_DIM = 384  # same dim as nomic-embed-text for compatibility
+
+
+def _tfidf_embed(text: str) -> list[float]:
+    """Produce a fixed-dimension pseudo-embedding via hashed bag-of-words."""
+    tokens = _re.findall(r"[a-z0-9]+", text.lower())
+    vec = [0.0] * _EMBED_DIM
+    if not tokens:
+        return vec
+    for token in tokens:
+        h = int(hashlib.md5(token.encode()).hexdigest(), 16)
+        idx = h % _EMBED_DIM
+        sign = 1.0 if (h // _EMBED_DIM) % 2 == 0 else -1.0
+        vec[idx] += sign
+    # L2-normalize
+    norm = math.sqrt(sum(x * x for x in vec)) or 1.0
+    return [x / norm for x in vec]
 
 
 class LLMClient:
@@ -162,15 +190,22 @@ class LLMClient:
         system: str | None = None,
         use_cache: bool = True,
     ) -> str:
-        # Try Groq 70B first, and if it fails (rate limit, etc), fallback to Ollama locally.
+        # Try Groq first, and if it fails (rate limit, etc), fallback to Ollama locally.
         try:
             return await self._groq.complete(prompt=prompt, system=system)
         except Exception as exc:
-            logger.exception("Groq completion failed, falling back to Ollama: %s", exc)
+            logger.warning("Groq completion failed, falling back to Ollama: %s", exc)
             return await self._ollama.complete(prompt=prompt, system=system)
 
     async def embed(self, text: str) -> list[float]:
-        return await self._ollama.embed(text)
+        # Try Ollama first; if unavailable use pure-Python fallback
+        try:
+            return await self._ollama.embed(text)
+        except Exception as exc:
+            logger.warning(
+                "Ollama embed unavailable, using TF-IDF fallback: %s", exc
+            )
+            return _tfidf_embed(text)
 
 
 class HallucinationScorer:

@@ -298,6 +298,13 @@ class CompanyResearchAgent(BaseAgent):
         result: dict[str, Any],
         original_payload: Any,
     ) -> None:
+        # Persist research to DB before queuing
+        try:
+            from db.persistence import upsert_research
+            await upsert_research(result)
+        except Exception as exc:
+            logger.exception("Failed to persist research results to DB: %s", exc)
+
         await queue_manager.publish(JD_ENRICHED, result, "jd.enriched.new")
 
     async def _serpapi_search(self, query: str, num: int) -> list[dict[str, Any]]:
