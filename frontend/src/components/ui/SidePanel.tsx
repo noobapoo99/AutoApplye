@@ -1,7 +1,9 @@
-import { ApplicationDetail } from '@/types';
+import { ApplicationDetail, ApplicationStatus } from '@/types';
 import { format } from 'date-fns';
-import { X } from 'lucide-react';
+import { X, Trash2, CheckCircle2, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { submitReviewDecision } from '@/lib/api';
+import { mutate } from 'swr';
 
 interface SidePanelProps {
   detail: ApplicationDetail | null;
@@ -51,11 +53,27 @@ const ClassificationBadge = ({ classification }: { classification: string }) => 
 
 export default function SidePanel({ detail, onClose }: SidePanelProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isActionLoading, setIsActionLoading] = useState(false);
 
   if (!detail) return null;
 
   const { application, email_threads } = detail;
-  const { company_name, role_title, status, match_score, hallucination_score, flagged_reason, applied_at } = application;
+  const { id: application_id, job_id, company_name, role_title, status, match_score, hallucination_score, flagged_reason, applied_at } = application;
+
+  const handleAction = async (decision: 'proceed' | 'skip') => {
+    if (!job_id) return;
+    setIsActionLoading(true);
+    try {
+      await submitReviewDecision(job_id, decision);
+      await mutate('applications');
+      onClose();
+    } catch (error) {
+      console.error('Failed to submit review decision:', error);
+      alert('Action failed. Please try again.');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
 
   let scoreColor = 'text-red-500';
   if (match_score !== null) {
@@ -85,6 +103,27 @@ export default function SidePanel({ detail, onClose }: SidePanelProps) {
           <div className="mt-2 inline-flex items-center">
              <StatusBadge status={status} />
           </div>
+
+          {(status === ApplicationStatus.discovered || status === ApplicationStatus.flagged_human) && (
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                disabled={isActionLoading}
+                onClick={() => handleAction('skip')}
+                className="flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-300 text-sm font-medium py-2 px-3 rounded-lg border border-zinc-700 transition-colors"
+              >
+                {isActionLoading ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                Discard
+              </button>
+              <button
+                disabled={isActionLoading}
+                onClick={() => handleAction('proceed')}
+                className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-80 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors shadow-lg shadow-blue-900/20"
+              >
+                {isActionLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                Apply Anyways
+              </button>
+            </div>
+          )}
         </div>
 
         {/* SECTION 2 */}

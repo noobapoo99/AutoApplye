@@ -50,7 +50,7 @@ export async function submitReviewDecision(
   job_id: string,
   decision: ReviewDecision,
 ): Promise<void> {
-  await api.post(`/api/review/${job_id}`, {
+  await api.post(`/api/jobs/review/${job_id}`, {
     job_id,
     decision,
   });
