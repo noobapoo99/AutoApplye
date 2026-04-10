@@ -294,8 +294,8 @@ class JDScoutAgent(BaseAgent):
         normalized = dict(STRUCTURED_SCHEMA_DEFAULTS)
         normalized.update({key: data.get(key) for key in STRUCTURED_SCHEMA_DEFAULTS})
 
-        normalized["company_name"] = str(normalized.get("company_name") or "")
-        normalized["role_title"] = str(normalized.get("role_title") or "")
+        normalized["company_name"] = str(normalized.get("company_name") or "Unknown Company")
+        normalized["role_title"] = str(normalized.get("role_title") or "Unknown Role")
         normalized["location"] = str(normalized.get("location") or "")
         normalized["salary_range"] = str(normalized.get("salary_range") or "")
         normalized["job_type"] = str(normalized.get("job_type") or "")

@@ -13,6 +13,7 @@ from agents.base import BaseAgent
 from core.redis_client import acquire_lock
 from core.redis_client import application_limiter
 from core.redis_client import release_lock
+from core.websocket import ws_manager, event_payload
 
 
 logger = logging.getLogger(__name__)
@@ -395,6 +396,15 @@ class ApplicationAgent(BaseAgent):
                 resume_version_id=resume_version_id,
                 error="duplicate_in_progress",
             )
+        
+        await ws_manager.broadcast(
+            event_payload(
+                "application_started",
+                job_id=job_id,
+                company_name=company_name,
+                role_title=role_title,
+            )
+        )
 
         try:
             allowed, wait_secs = await application_limiter.is_allowed()
@@ -420,7 +430,7 @@ class ApplicationAgent(BaseAgent):
                 or form_fill_result.get("confirmation_detected")
             )
 
-            return {
+            result = {
                 "job_id": job_id,
                 "company_name": company_name,
                 "role_title": role_title,
@@ -433,6 +443,17 @@ class ApplicationAgent(BaseAgent):
                 "match_score": match_score,
                 "resume_version_id": resume_version_id,
             }
+
+            await ws_manager.broadcast(
+                event_payload(
+                    "application_complete",
+                    job_id=job_id,
+                    success=success,
+                    status="applied" if success else "failed",
+                )
+            )
+
+            return result
         finally:
             await release_lock(job_id)
 
@@ -477,8 +498,15 @@ class ApplicationAgent(BaseAgent):
             browser = await playwright.chromium.launch(headless=True)
             try:
                 page = await browser.new_page()
+                await ws_manager.broadcast(
+                    event_payload("application_navigating", url=url)
+                )
                 await page.goto(url, wait_until="networkidle")
+                
                 template = detect_ats(url)
+                await ws_manager.broadcast(
+                    event_payload("application_filling_forms", ats_type=template.ats_type)
+                )
                 return await template.execute(page, self.user_data, resume_path)
             finally:
                 if page is not None:

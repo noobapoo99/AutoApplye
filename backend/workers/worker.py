@@ -1,10 +1,12 @@
-#!/usr/bin/env python3
-"""
-Worker entry point. WORKER_TYPE env var selects which queue to consume.
-Values: research | resume | application | gmail
-"""
-import os, asyncio
+import os, asyncio, logging
 import structlog
+from core.config import get_settings
+
+# Configure standard logging to match API settings so agent/core logs are visible
+logging.basicConfig(
+    level=getattr(logging, get_settings().log_level.upper(), logging.INFO),
+    format="%(message)s",
+)
 
 # Import all agent modules to trigger @AgentFactory.register() decorators
 import agents.scout_agent

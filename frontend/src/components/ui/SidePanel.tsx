@@ -1,8 +1,8 @@
 import { ApplicationDetail, ApplicationStatus } from '@/types';
 import { format } from 'date-fns';
-import { X, Trash2, CheckCircle2, Loader2 } from 'lucide-react';
+import { X, Trash2, CheckCircle2, Loader2, FileText, RotateCcw, ExternalLink } from 'lucide-react';
 import { useState } from 'react';
-import { submitReviewDecision } from '@/lib/api';
+import { submitReviewDecision, getResumeUrl, updateApplicationStatus, rerunApplicationPipeline } from '@/lib/api';
 import { mutate } from 'swr';
 
 interface SidePanelProps {
@@ -65,11 +65,44 @@ export default function SidePanel({ detail, onClose }: SidePanelProps) {
     setIsActionLoading(true);
     try {
       await submitReviewDecision(job_id, decision);
-      await mutate('applications');
+      await mutate('/api/applications');
+      await mutate('/api/flagged');
       onClose();
     } catch (error) {
       console.error('Failed to submit review decision:', error);
       alert('Action failed. Please try again.');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleManualStatus = async (newStatus: string) => {
+    if (!application_id) return;
+    setIsActionLoading(true);
+    try {
+      await updateApplicationStatus(application_id, newStatus);
+      await mutate('/api/applications');
+      await mutate('/api/flagged');
+      onClose();
+    } catch (error) {
+      console.error('Failed to update status:', error);
+      alert('Failed to update status.');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleRerun = async () => {
+    if (!application_id) return;
+    setIsActionLoading(true);
+    try {
+      await rerunApplicationPipeline(application_id);
+      await mutate('/api/applications');
+      await mutate('/api/flagged');
+      onClose();
+    } catch (error) {
+      console.error('Failed to rerun pipeline:', error);
+      alert('Failed to re-run pipeline.');
     } finally {
       setIsActionLoading(false);
     }
@@ -128,22 +161,66 @@ export default function SidePanel({ detail, onClose }: SidePanelProps) {
 
         {/* SECTION 2 */}
         <div className="p-4 border-b border-zinc-800">
-          {match_score !== null && (
-            <div>
-              <p className={`text-4xl font-bold ${scoreColor}`}>
-                {(match_score * 100).toFixed(0)}%
-              </p>
-              <p className="text-zinc-500 text-xs uppercase tracking-wider mt-1">
-                Resume Match Score
-              </p>
-            </div>
-          )}
-          <p className="text-zinc-500 text-xs mt-2">
+          <div className="flex justify-between items-start">
+            {match_score !== null && (
+              <div>
+                <p className={`text-4xl font-bold ${scoreColor}`}>
+                  {(match_score * 100).toFixed(0)}%
+                </p>
+                <p className="text-zinc-500 text-xs uppercase tracking-wider mt-1">
+                  Resume Match Score
+                </p>
+              </div>
+            )}
+            
+            {application.resume_version_id && (
+              <a 
+                href={getResumeUrl(application.resume_version_id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 text-xs font-medium bg-blue-400/10 px-2 py-1.5 rounded border border-blue-400/20 transition-colors"
+              >
+                <FileText size={14} />
+                View Resume
+                <ExternalLink size={12} />
+              </a>
+            )}
+          </div>
+
+          <p className="text-zinc-500 text-xs mt-3">
             Fact Check: {hallucination_score ?? 0}/6 criteria passed
           </p>
+          
           {flagged_reason && (
             <div className="bg-amber-950/40 border border-amber-800/40 rounded-lg p-3 mt-3">
-              <p className="text-amber-300 text-sm">⚠ {flagged_reason}</p>
+              <p className="flex gap-2 text-amber-300 text-sm">
+                <span className="shrink-0 pt-0.5 text-amber-400">⚠</span>
+                {flagged_reason}
+              </p>
+              
+              {status === ApplicationStatus.flagged_human && (
+                <div className="mt-3 flex flex-col gap-2">
+                  <p className="text-[10px] text-amber-500 uppercase font-semibold tracking-wider">Advanced Actions</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={handleRerun}
+                      disabled={isActionLoading}
+                      className="flex items-center justify-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px] py-1.5 px-2 rounded border border-zinc-700 transition-colors"
+                    >
+                      <RotateCcw size={12} />
+                      Re-run AI Edit
+                    </button>
+                    <button
+                      onClick={() => handleManualStatus('applied')}
+                      disabled={isActionLoading}
+                      className="flex items-center justify-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px] py-1.5 px-2 rounded border border-zinc-700 transition-colors"
+                    >
+                      <CheckCircle2 size={12} />
+                      Mark Applied
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -133,12 +133,11 @@ class QueueManager:
         queue = self._queues[queue_key]
 
         async def _callback(message: Any) -> None:
-            await message.ack()
-
             try:
                 payload = json.loads(message.body.decode("utf-8"))
             except Exception as exc:
                 logger.exception("Failed to decode message from %s", queue_key)
+                await message.ack()
                 await self.publish_to_dlq(
                     queue_key,
                     {"raw_body": message.body.decode("utf-8", errors="replace")},
@@ -146,10 +145,13 @@ class QueueManager:
                 )
                 return
 
+            logger.info("Message received from queue: %s", queue_key)
             try:
                 await handler(payload)
+                await message.ack()
             except Exception as exc:
                 logger.exception("Handler failed for queue %s", queue_key)
+                await message.ack()
                 await self.publish_to_dlq(queue_key, payload, f"handler_error: {exc}")
 
         return await queue.consume(_callback)

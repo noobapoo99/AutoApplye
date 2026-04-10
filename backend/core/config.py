@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_LEAK_RATE: float
     HALLUCINATION_THRESHOLD: float
     RESUME_MATCH_THRESHOLD: float
+    RESUME_DIR: str = "data/resumes"
 
     @property
     def database_url(self) -> str:

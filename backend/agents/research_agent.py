@@ -213,10 +213,9 @@ class CompanyResearchAgent(BaseAgent):
         if not isinstance(payload, dict):
             return False
 
+        # job_id is the only strict requirement for the pipeline to stay linked
         job_id = payload.get("job_id")
-        company = payload.get("company_name") or payload.get("company")
-        role = payload.get("role_title") or payload.get("role")
-        return bool(job_id and company and role)
+        return bool(job_id)
 
     async def process(self, payload: Any) -> dict[str, Any]:
         job_id = str(payload["job_id"])

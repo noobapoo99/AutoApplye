@@ -110,3 +110,26 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
   await api.post("/api/user/profile", profile);
 }
 
+
+// ---------------------------------------------------------------------------
+// Advanced Flow Control
+// ---------------------------------------------------------------------------
+
+export function getResumeUrl(resumeVersionId: string): string {
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || "";
+  return `${baseUrl}/api/applications/resume/${resumeVersionId}`;
+}
+
+export async function updateApplicationStatus(
+  applicationId: string,
+  status: string
+): Promise<void> {
+  await api.post(`/api/applications/${applicationId}/status`, { status });
+}
+
+export async function rerunApplicationPipeline(
+  applicationId: string
+): Promise<void> {
+  await api.post(`/api/applications/${applicationId}/rerun`);
+}
+

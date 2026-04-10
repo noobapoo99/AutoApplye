@@ -11,6 +11,7 @@ from typing import runtime_checkable
 
 from core.llm import hallucination_scorer
 from core.llm import llm_client
+from core.websocket import ws_manager, event_payload
 
 
 logger = logging.getLogger(__name__)
@@ -39,10 +40,27 @@ class BaseAgent(ABC):
         raise NotImplementedError
 
     async def run(self, payload: Any) -> dict[str, Any]:
-        logger.info("Agent %s starting", self.agent_name)
-
         if not self.validate_input(payload):
+            await ws_manager.broadcast(
+                event_payload(
+                    "agent_error",
+                    agent=self.agent_name,
+                    error="Invalid payload"
+                )
+            )
             raise ValueError(f"Invalid payload for agent '{self.agent_name}'")
+
+        await ws_manager.broadcast(
+            event_payload(
+                "agent_started",
+                agent=self.agent_name,
+                payload_summary={
+                    "job_id": payload.get("job_id"),
+                    "company": payload.get("company_name"),
+                    "role": payload.get("role_title")
+                }
+            )
+        )
 
         result = await self.process(payload)
 
@@ -83,6 +101,16 @@ class BaseAgent(ABC):
                     )
 
         await self.emit_result(result, payload)
+        
+        await ws_manager.broadcast(
+            event_payload(
+                "agent_completed",
+                agent=self.agent_name,
+                job_id=result.get("job_id"),
+                passed=passed,
+                score=f"{score}/{max_score}" if max_score else "N/A"
+            )
+        )
         logger.info("Agent %s completed", self.agent_name)
         return result
 

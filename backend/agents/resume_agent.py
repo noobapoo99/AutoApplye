@@ -14,18 +14,23 @@ from agents.base import AgentFactory
 from agents.base import BaseAgent
 from agents.base import RESUME_STRATEGIES
 from core.config import get_settings
-from core.queue import JD_FLAGGED
-from core.queue import JD_READY
-from core.queue import queue_manager
-from core.resume_store import get_resume_text as _get_resume_text
+from core.queue import JD_FLAGGED, JD_READY, queue_manager
+from core.resume_store import DATA_DIR, get_resume_text as _get_resume_text
 
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-RESUME_DIR = Path("/tmp/resumes")
+BACKEND_ROOT = DATA_DIR.parent
+RESUME_DIR = Path(settings.RESUME_DIR)
+if not RESUME_DIR.is_absolute():
+    if settings.RESUME_DIR.startswith("data/"):
+        RESUME_DIR = DATA_DIR / Path(settings.RESUME_DIR).relative_to("data")
+    else:
+        RESUME_DIR = BACKEND_ROOT / settings.RESUME_DIR
+
 RESUME_DIR.mkdir(parents=True, exist_ok=True)
-BASE_RESUME_PATH = Path("/app/data/base_resume.docx")
+BASE_RESUME_PATH = DATA_DIR / "base_resume.docx"
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -229,7 +234,7 @@ class ResumeEditorAgent(BaseAgent):
             response = await self.llm.complete(
                 prompt=prompt,
                 system=(
-                    "You estimate resume match improvement conservatively and reply "
+                    "You estimate resume match improvement fairly and reply "
                     "with a decimal only."
                 ),
                 use_cache=False,

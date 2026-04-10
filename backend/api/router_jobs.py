@@ -10,8 +10,9 @@ from sqlalchemy.orm import selectinload
 from agents import scout_agent as _scout_agent  # noqa: F401
 from agents.base import AgentFactory
 from api.schemas import SearchJobsRequest, ReviewDecisionRequest
-from core.queue import JD_READY, queue_manager
+from core.queue import JD_RAW, JD_ENRICHED, JD_READY, queue_manager
 from core.websocket import ws_manager, event_payload
+from core.config import get_settings
 from db.models import Application, ApplicationStatus, AsyncSessionLocal
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -108,41 +109,71 @@ async def review_application(
             raise HTTPException(status_code=404, detail="Application not found")
 
         if request.decision == "proceed":
-            apply_url = (
-                application.job.external_apply_url
-                if application.job is not None
-                else None
-            )
-            edited_filename = (
-                application.resume_version.edited_filename
-                if application.resume_version is not None
-                else None
-            )
-            if not apply_url or not edited_filename:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Application is missing apply URL or edited resume metadata",
+            # Intelligent Routing: If we lack the apply URL or resume, 
+            # go back to research or resume edit instead of erroring with 409.
+            
+            apply_url = application.job.external_apply_url if application.job else None
+            resume_version = application.resume_version
+            
+            # 1. If no apply URL, we definitely need research
+            if not apply_url:
+                logger.info("Apply Anyway: Missing URL for %s, routing to RESEARCH", job_id)
+                await queue_manager.publish(
+                    JD_RAW, 
+                    {
+                        "job_id": job_id,
+                        "company_name": application.company_name,
+                        "role_title": application.role_title,
+                        "raw_text": application.job.raw_text if application.job else ""
+                    },
+                    "jd.raw.manual"
                 )
+                application.status = ApplicationStatus.researching
+            
+            # 2. If we have URL but no edited resume, we need resume phase
+            elif not resume_version or not resume_version.edited_filename:
+                logger.info("Apply Anyway: Missing Resume for %s, routing to RESUME", job_id)
+                await queue_manager.publish(
+                    JD_ENRICHED,
+                    {
+                        "job_id": job_id,
+                        "company_name": application.company_name,
+                        "role_title": application.role_title,
+                        "raw_text": application.job.raw_text if application.job else "",
+                    },
+                    "jd.enriched.manual"
+                )
+                application.status = ApplicationStatus.resume_editing
+            
+            # 3. We have everything, proceed to application
+            else:
+                logger.info("Apply Anyway: All systems go for %s, routing to APPLICATION", job_id)
+                settings = get_settings()
+                resume_dir = Path(settings.RESUME_DIR)
+                if not resume_dir.is_absolute():
+                    resume_dir = Path(__file__).resolve().parent.parent / settings.RESUME_DIR
+                resume_path = str(resume_dir / resume_version.edited_filename)
+                await queue_manager.publish(
+                    JD_READY,
+                    {
+                        "job_id": application.job_id,
+                        "company_name": application.company_name,
+                        "role_title": application.role_title,
+                        "external_apply_url": apply_url,
+                        "resume_path": resume_path,
+                        "match_score": application.match_score,
+                        "resume_version_id": application.resume_version_id,
+                    },
+                    "jd.ready.manual",
+                )
+                application.status = ApplicationStatus.applying
 
-            application.status = ApplicationStatus.applying
-            resume_path = str(Path("/tmp/resumes") / edited_filename)
-            await queue_manager.publish(
-                JD_READY,
-                {
-                    "job_id": application.job_id,
-                    "company_name": application.company_name,
-                    "role_title": application.role_title,
-                    "external_apply_url": apply_url,
-                    "resume_path": resume_path,
-                    "match_score": application.match_score,
-                    "resume_version_id": application.resume_version_id,
-                },
-                "jd.ready.new",
-            )
             await session.commit()
+            
+            event_type = "human_approved" if application.status == ApplicationStatus.applying else "pipeline_triggered_manual"
             await ws_manager.broadcast(
                 event_payload(
-                    "human_approved",
+                    event_type,
                     job_id=application.job_id,
                     application_id=application.id,
                     status=application.status.value,

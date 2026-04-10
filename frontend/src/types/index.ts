@@ -55,6 +55,7 @@ export interface FlaggedJob {
   match_score: number | null;
   flagged_reason: string | null;
   hallucination_score: number | null;
+  resume_version_id: string | null;
   last_updated: string | null;
 }
 
