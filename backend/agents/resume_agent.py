@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import os, asyncio
 import json
 import logging
 from pathlib import Path
@@ -16,6 +16,7 @@ from agents.base import RESUME_STRATEGIES
 from core.config import get_settings
 from core.queue import JD_FLAGGED, JD_READY, queue_manager
 from core.resume_store import DATA_DIR, get_resume_text as _get_resume_text
+from core.websocket import ws_manager
 
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,14 @@ if not RESUME_DIR.is_absolute():
 
 RESUME_DIR.mkdir(parents=True, exist_ok=True)
 BASE_RESUME_PATH = DATA_DIR / "base_resume.docx"
+
+
+def delete_paragraph(paragraph):
+    """Effectively removes a paragraph from a python-docx Document."""
+    p = paragraph._element
+    if p.getparent() is not None:
+        p.getparent().remove(p)
+    paragraph._p = paragraph._element = None
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -82,22 +91,79 @@ class ResumeEditorAgent(BaseAgent):
         )
 
         resume_text = self._load_resume_text()
-        resume_embedding, jd_embedding = await asyncio.gather(
-            self.llm.embed(resume_text),
-            self.llm.embed(jd_text),
+        await ws_manager.publish_event(
+            "agent_progress",
+            agent=self.agent_name,
+            job_id=job_id,
+            message="Analyzing resume and job description gap...",
+            step=1,
+            total_steps=5
         )
+        try:
+            resume_embedding, jd_embedding = await asyncio.wait_for(
+                asyncio.gather(
+                    self.llm.embed(resume_text),
+                    self.llm.embed(jd_text),
+                ),
+                timeout=30.0
+            )
+        except asyncio.TimeoutError:
+            logger.error("Embedding generation timed out for job_id=%s", job_id)
+            raise TimeoutError("AI embedding timeout")
+
         match_score_before = cosine_similarity(resume_embedding, jd_embedding)
 
+        await ws_manager.publish_event(
+            "agent_progress",
+            agent=self.agent_name,
+            job_id=job_id,
+            message="Identifying missing skills and keyword gaps...",
+            step=2,
+            total_steps=5
+        )
         gap_analysis = await self._identify_gaps(resume_text, required_skills, jd_text)
         present_skills = self._normalize_required_skills(gap_analysis.get("present_skills"))
         gap_skills = self._normalize_required_skills(gap_analysis.get("missing_skills"))
 
-        edit_result = await self.strategy.edit(resume_text, jd_text, gap_skills)
+        await ws_manager.publish_event(
+            "agent_progress",
+            agent=self.agent_name,
+            job_id=job_id,
+            message=f"Applying {self.strategy_name} strategy...",
+            step=3,
+            total_steps=5
+        )
+        try:
+            edit_result = await asyncio.wait_for(
+                self.strategy.edit(resume_text, jd_text, gap_skills),
+                timeout=60.0
+            )
+        except asyncio.TimeoutError:
+            logger.error("Resume edit strategy timed out for job_id=%s", job_id)
+            raise TimeoutError("AI resume edit strategy timeout")
+
+        await ws_manager.publish_event(
+            "agent_progress",
+            agent=self.agent_name,
+            job_id=job_id,
+            message="Estimating match score improvement...",
+            step=4,
+            total_steps=5
+        )
         match_score_after = await self._estimate_improved_score(
             match_score_before,
             edit_result,
             gap_skills,
             self.strategy_name,
+        )
+
+        await ws_manager.publish_event(
+            "agent_progress",
+            agent=self.agent_name,
+            job_id=job_id,
+            message="Finalizing edited resume document...",
+            step=5,
+            total_steps=5
         )
 
         edited_resume_file = RESUME_DIR / f"{job_id}_{self.strategy_name}.docx"
@@ -183,13 +249,16 @@ class ResumeEditorAgent(BaseAgent):
         )
 
         try:
-            response = await self.llm.complete(
-                prompt=prompt,
-                system=(
-                    "You are a strict resume-to-job matcher. Only classify skills as "
-                    "present if they are grounded in the resume text. Return JSON only."
+            response = await asyncio.wait_for(
+                self.llm.complete(
+                    prompt=prompt,
+                    system=(
+                        "You are a strict resume-to-job matcher. Only classify skills as "
+                        "present if they are grounded in the resume text. Return JSON only."
+                    ),
+                    use_cache=False,
                 ),
-                use_cache=False,
+                timeout=45.0
             )
             parsed = self._parse_json_object(response)
             return {
@@ -231,13 +300,16 @@ class ResumeEditorAgent(BaseAgent):
         )
 
         try:
-            response = await self.llm.complete(
-                prompt=prompt,
-                system=(
-                    "You estimate resume match improvement fairly and reply "
-                    "with a decimal only."
+            response = await asyncio.wait_for(
+                self.llm.complete(
+                    prompt=prompt,
+                    system=(
+                        "You estimate resume match improvement fairly and reply "
+                        "with a decimal only."
+                    ),
+                    use_cache=False,
                 ),
-                use_cache=False,
+                timeout=30.0
             )
             estimated = self._extract_first_float(response)
         except Exception as exc:
@@ -252,48 +324,128 @@ class ResumeEditorAgent(BaseAgent):
         path: Path,
         original_text: str,
     ) -> str:
-        document = Document()
-        document.add_heading("AutoApply Resume Edit Preview", level=0)
-        document.add_paragraph(f"Strategy: {self.strategy_name}")
+        abs_path = path.absolute()
+        logger.info("Saving edited resume to: %s", abs_path)
 
-        document.add_heading("Changes", level=1)
-        changes = self._normalize_string_list(edit_result.get("changes"))
-        if changes:
-            for change in changes:
-                document.add_paragraph(change, style="List Bullet")
-        else:
-            document.add_paragraph("No explicit changes were returned.")
+        # 1. Try to open the original resume to preserve formatting
+        doc: Document | None = None
+        if BASE_RESUME_PATH.exists():
+            try:
+                from docx import Document as DocGetter
+                doc = DocGetter(str(BASE_RESUME_PATH))
+                logger.info("Using original resume as template.")
+            except Exception as exc:
+                logger.warning("Failed to load base resume template: %s", exc)
 
-        edited_sections = edit_result.get("edited_sections")
-        if isinstance(edited_sections, dict) and edited_sections:
-            document.add_heading("Edited Sections", level=1)
-            for section_name, content in edited_sections.items():
-                document.add_heading(str(section_name), level=2)
-                document.add_paragraph(str(content))
-
-        new_summary = str(edit_result.get("new_summary") or "").strip()
+        # 2. Extract edits
+        edited_sections = edit_result.get("edited_sections") or {}
+        new_summary = edit_result.get("new_summary")
+        reordered_skills = edit_result.get("reordered_skills")
+        
+        # Normalize keys to lowercase for matching
+        edits_map = {k.lower(): v for k, v in edited_sections.items()}
         if new_summary:
-            document.add_heading("Updated Summary", level=1)
-            document.add_paragraph(new_summary)
-
-        reordered_skills = self._normalize_required_skills(
-            edit_result.get("reordered_skills")
-        )
+            edits_map["summary"] = new_summary
+            edits_map["professional summary"] = new_summary
         if reordered_skills:
-            document.add_heading("Reordered Skills", level=1)
-            for skill in reordered_skills:
-                document.add_paragraph(skill, style="List Bullet")
+            edits_map["skills"] = "\n".join(reordered_skills)
+            edits_map["technical skills"] = "\n".join(reordered_skills)
 
-        document.add_heading("Original Resume", level=1)
-        original_lines = [line.strip() for line in original_text.splitlines() if line.strip()]
-        if original_lines:
-            for line in original_lines:
-                document.add_paragraph(line)
-        else:
-            document.add_paragraph("Original resume text was empty.")
+        # 3. If template exists, perform smart in-place replacement
+        if doc is not None:
+            paragraphs = list(doc.paragraphs)
+            i = 0
+            while i < len(paragraphs):
+                p = paragraphs[i]
+                text = p.text.strip()
+                item_text = text.lower().strip(":")
+                
+                if item_text in edits_map:
+                    section_key = item_text
+                    new_lines = [ln.strip() for ln in str(edits_map[section_key]).splitlines() if ln.strip()]
+                    
+                    # 3a. Identify original content bounds for this section
+                    start_index = i + 1
+                    end_index = start_index
+                    common_headings = {"education", "experience", "projects", "skills", "summary", "technical skills", "education", "competitions", "achievements", "work experience"}
+                    while end_index < len(paragraphs):
+                        next_p = paragraphs[end_index]
+                        next_text = next_p.text.strip().lower().strip(":")
+                        if next_text in edits_map or next_text in common_headings:
+                            break
+                        end_index += 1
+                    
+                    original_content_count = end_index - start_index
+                    
+                    # 3b. Replace existing paragraphs one-to-one to preserve styles
+                    shared_style = None
+                    if original_content_count > 0:
+                        shared_style = paragraphs[start_index].style
+                    
+                    for j in range(min(original_content_count, len(new_lines))):
+                        target_p = paragraphs[start_index + j]
+                        target_p.text = new_lines[j]
+                    
+                    # 3c. If new content is SHORTER, delete excess paragraphs
+                    if len(new_lines) < original_content_count:
+                        for j in range(start_index + len(new_lines), end_index):
+                            delete_paragraph(paragraphs[j])
+                    
+                    # 3d. If new content is LONGER, insert new paragraphs cloning the style
+                    elif len(new_lines) > original_content_count:
+                        last_p = paragraphs[end_index - 1] if original_content_count > 0 else p
+                        for j in range(original_content_count, len(new_lines)):
+                            # Insert after last_p
+                            new_p = last_p.insert_paragraph_before(new_lines[j], shared_style or p.style)
+                            # Note: insert_paragraph_before is before. To do after, we need XML level.
+                            # But for a resume, inserting before the next heading (paragraphs[end_index]) is safer.
+                            
+                            # Correction: if we have next_p at end_index, insert before it.
+                            if end_index < len(paragraphs):
+                                paragraphs[end_index].insert_paragraph_before(new_lines[j], shared_style or p.style)
+                            else:
+                                doc.add_paragraph(new_lines[j], shared_style or p.style)
 
-        document.save(str(path))
-        return str(path)
+                    del edits_map[section_key]
+                    i = end_index - 1
+                i += 1
+            
+            doc.save(str(abs_path))
+            return str(abs_path)
+
+        # 4. Fallback: Reconstruct clean document if template is missing
+        clean_doc = Document()
+        
+        # Start with name/contact info if we can find it
+        lines = original_text.splitlines()
+        if lines:
+            clean_doc.add_heading(lines[0], level=0)
+            if len(lines) > 1:
+                clean_doc.add_paragraph(lines[1])
+
+        # Add the rest of the original resume, but replace sections where we have edits
+        current_section = None
+        for line in lines[2:]:
+            stripped = line.strip()
+            if not stripped: continue
+            
+            lower_stripped = stripped.lower().strip(":")
+            if lower_stripped in edits_map:
+                clean_doc.add_heading(stripped, level=1)
+                clean_doc.add_paragraph(str(edits_map[lower_stripped]))
+                # Skip the original section content (naive)
+                current_section = lower_stripped
+            elif current_section:
+                # We are skipping original content because we replaced the section
+                # We stop skipping at the next heading
+                if len(stripped) < 30 and (stripped.isupper() or stripped.endswith(":")):
+                    current_section = None
+                    clean_doc.add_heading(stripped, level=1)
+            else:
+                clean_doc.add_paragraph(stripped)
+
+        clean_doc.save(str(abs_path))
+        return str(abs_path)
 
     def _build_flag_reason(self, match_score_after: float) -> str:
         return (

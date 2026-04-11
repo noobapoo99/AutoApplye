@@ -50,8 +50,8 @@ async def upsert_job(payload: dict[str, Any]) -> str:
             job = Job(
                 id=job_id,
                 source_url=source_url,
-                company_name=company_name,
-                role_title=role_title,
+                company_name=_truncate(company_name),
+                role_title=_truncate(role_title),
                 raw_text=raw_text[:50000],
                 screenshot_path=screenshot_path,
                 external_apply_url=external_apply_url,
@@ -76,8 +76,8 @@ async def upsert_job(payload: dict[str, Any]) -> str:
             app = Application(
                 id=str(uuid4()),
                 job_id=job_id,
-                company_name=company_name,
-                role_title=role_title,
+                company_name=_truncate(company_name),
+                role_title=_truncate(role_title),
                 status=ApplicationStatus.discovered,
                 hallucination_score=_safe_hallucination_score(payload),
             )
@@ -123,12 +123,12 @@ async def upsert_research(payload: dict[str, Any]) -> str:
             research = CompanyResearch(
                 id=research_id,
                 job_id=job_id,
-                company_name=company_name,
+                company_name=_truncate(company_name),
                 reddit_summary=str(payload.get("reddit_summary") or "")[:10000],
                 glassdoor_summary=str(payload.get("glassdoor_summary") or "")[:10000],
                 culture_notes=str(payload.get("culture_notes") or "")[:10000],
                 required_skills_extended=payload.get("required_skills_extended") or [],
-                salary_range=str(payload.get("salary_range") or "")[:255],
+                salary_range=_truncate(str(payload.get("salary_range") or "")),
                 red_flags=payload.get("red_flags") or [],
                 hallucination_score=_safe_hallucination_score(payload),
             )
@@ -226,8 +226,8 @@ async def upsert_application(
             application = Application(
                 id=app_id,
                 job_id=job_id,
-                company_name=company_name,
-                role_title=role_title,
+                company_name=_truncate(company_name),
+                role_title=_truncate(role_title),
                 status=status,
                 resume_version_id=resume_version_id,
                 match_score=match_score,
@@ -320,6 +320,14 @@ def _should_update_status(
         return _STATUS_ORDER.index(new) > _STATUS_ORDER.index(current)
     except ValueError:
         return True
+
+
+def _truncate(value: Any, limit: int = 255) -> str:
+    """Safely cast to string and truncate to limit."""
+    if value is None:
+        return ""
+    text = str(value)
+    return text[:limit] if len(text) > limit else text
 
 
 def _safe_float(value: Any) -> float | None:

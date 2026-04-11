@@ -11,7 +11,7 @@ from typing import runtime_checkable
 
 from core.llm import hallucination_scorer
 from core.llm import llm_client
-from core.websocket import ws_manager, event_payload
+from core.websocket import ws_manager
 
 
 logger = logging.getLogger(__name__)
@@ -41,25 +41,21 @@ class BaseAgent(ABC):
 
     async def run(self, payload: Any) -> dict[str, Any]:
         if not self.validate_input(payload):
-            await ws_manager.broadcast(
-                event_payload(
-                    "agent_error",
-                    agent=self.agent_name,
-                    error="Invalid payload"
-                )
+            await ws_manager.publish_event(
+                "agent_error",
+                agent=self.agent_name,
+                error="Invalid payload"
             )
             raise ValueError(f"Invalid payload for agent '{self.agent_name}'")
 
-        await ws_manager.broadcast(
-            event_payload(
-                "agent_started",
-                agent=self.agent_name,
-                payload_summary={
-                    "job_id": payload.get("job_id"),
-                    "company": payload.get("company_name"),
-                    "role": payload.get("role_title")
-                }
-            )
+        await ws_manager.publish_event(
+            "agent_started",
+            agent=self.agent_name,
+            payload_summary={
+                "job_id": payload.get("job_id"),
+                "company": payload.get("company_name"),
+                "role": payload.get("role_title")
+            }
         )
 
         result = await self.process(payload)
@@ -102,14 +98,12 @@ class BaseAgent(ABC):
 
         await self.emit_result(result, payload)
         
-        await ws_manager.broadcast(
-            event_payload(
-                "agent_completed",
-                agent=self.agent_name,
-                job_id=result.get("job_id"),
-                passed=passed,
-                score=f"{score}/{max_score}" if max_score else "N/A"
-            )
+        await ws_manager.publish_event(
+            "agent_completed",
+            agent=self.agent_name,
+            job_id=result.get("job_id"),
+            passed=passed,
+            score=f"{score}/{max_score}" if max_score else "N/A"
         )
         logger.info("Agent %s completed", self.agent_name)
         return result
@@ -180,15 +174,16 @@ class KeywordInjectionStrategy:
             "existing resume and the supplied gap skills. Return JSON only."
         )
         prompt = (
-            "Inject the missing skills naturally into existing resume bullet points "
-            "without inventing experience or credentials.\n\n"
+            "Inject ALL the following missing skills naturally into existing resume "
+            "bullet points or the skills section without inventing experience or "
+            "credentials. Ensure the edits look indistinguishable from original content.\n\n"
             f"Gap skills: {json.dumps(gap_skills, ensure_ascii=False)}\n\n"
             "Resume text:\n"
             f"{resume_text}\n\n"
             "Job description:\n"
             f"{jd_text}\n\n"
             "Return a JSON object with this exact shape:\n"
-            '{"edited_sections": {"section_name": "updated content"}, "changes": []}'
+            '{"edited_sections": {"Technical Skills": "updated content", "Experience": "updated bullets..."}, "changes": ["List of specific keywords added"]}'
         )
         result = await _complete_json_response(llm=self.llm, prompt=prompt, system=system)
         if "edited_sections" not in result or "changes" not in result:
@@ -228,6 +223,10 @@ class SummaryRewriteStrategy:
         result = await _complete_json_response(llm=self.llm, prompt=prompt, system=system)
         if "new_summary" not in result or "changes" not in result:
             raise ValueError("SummaryRewriteStrategy response is missing required keys")
+        
+        # Add edited_sections for easier reconstruction
+        result.setdefault("edited_sections", {})
+        result["edited_sections"]["Summary"] = result["new_summary"]
         return result
 
 
@@ -262,6 +261,10 @@ class SkillsReorderStrategy:
         result = await _complete_json_response(llm=self.llm, prompt=prompt, system=system)
         if "reordered_skills" not in result or "changes" not in result:
             raise ValueError("SkillsReorderStrategy response is missing required keys")
+            
+        # Add edited_sections for easier reconstruction
+        result.setdefault("edited_sections", {})
+        result["edited_sections"]["Technical Skills"] = "\n".join(result["reordered_skills"])
         return result
 
 

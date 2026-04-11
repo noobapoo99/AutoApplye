@@ -106,11 +106,22 @@ async def get_resume_file(resume_version_id: str) -> FileResponse:
                 resume_dir = BACKEND_ROOT / settings.RESUME_DIR
             
         resume_path = resume_dir / version.edited_filename
+        abs_resume_path = resume_path.absolute()
+        
         if not resume_path.exists():
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Resume file not found on disk at {resume_path.absolute()}. Please ensure the resume worker is running and sharing the volume."
+            # Debug: what else is in that directory?
+            dir_contents = []
+            if resume_dir.exists():
+                dir_contents = [f.name for f in resume_dir.iterdir() if f.is_file()]
+            
+            error_detail = (
+                f"Resume file not found on disk at {abs_resume_path}. "
+                f"Directory exists: {resume_dir.exists()}. "
+                f"Files in directory: {dir_contents}. "
+                f"Please ensure the resume worker is running and sharing the volume."
             )
+            logger.error(error_detail)
+            raise HTTPException(status_code=404, detail=error_detail)
 
         return FileResponse(
             path=str(resume_path),

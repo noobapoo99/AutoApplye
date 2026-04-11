@@ -222,17 +222,18 @@ class JDScoutAgent(BaseAgent):
         prompt = (
             "Extract structured information from the following job posting text.\n\n"
             f"Source URL: {url}\n\n"
-            "Return a JSON object with exactly these keys:\n"
+            "Return a JSON object with exactly these keys. Crucially, each value must be "
+            "a single string (not a list), representing the primary job on the page:\n"
             "{"
-            '"company_name": "", '
-            '"role_title": "", '
-            '"location": "", '
+            '"company_name": "Full legal company name (single string)", '
+            '"role_title": "Full job title (single string)", '
+            '"location": "City, State/Country", '
             '"required_skills": [], '
             '"nice_to_have_skills": [], '
             '"experience_years": null, '
             '"salary_range": "", '
             '"job_type": "", '
-            '"summary": ""'
+            '"summary": "Brief 1-2 sentence job overview"'
             "}\n\n"
             "Job text:\n"
             f"{text[:5000]}"
@@ -294,8 +295,16 @@ class JDScoutAgent(BaseAgent):
         normalized = dict(STRUCTURED_SCHEMA_DEFAULTS)
         normalized.update({key: data.get(key) for key in STRUCTURED_SCHEMA_DEFAULTS})
 
-        normalized["company_name"] = str(normalized.get("company_name") or "Unknown Company")
-        normalized["role_title"] = str(normalized.get("role_title") or "Unknown Role")
+        normalized["company_name"] = str(
+            normalized.get("company_name")[0] 
+            if isinstance(normalized.get("company_name"), list) and normalized.get("company_name") 
+            else (normalized.get("company_name") or "Unknown Company")
+        )
+        normalized["role_title"] = str(
+            normalized.get("role_title")[0]
+            if isinstance(normalized.get("role_title"), list) and normalized.get("role_title")
+            else (normalized.get("role_title") or "Unknown Role")
+        )
         normalized["location"] = str(normalized.get("location") or "")
         normalized["salary_range"] = str(normalized.get("salary_range") or "")
         normalized["job_type"] = str(normalized.get("job_type") or "")

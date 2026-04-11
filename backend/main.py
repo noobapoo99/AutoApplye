@@ -1,12 +1,10 @@
-from __future__ import annotations
-
-import logging
-import sys
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+
 
 # Ensure backend root is in sys.path
 BACKEND_ROOT = Path(__file__).resolve().parent
@@ -16,7 +14,7 @@ if str(BACKEND_ROOT) not in sys.path:
 # Core imports
 from core.config import get_settings
 from core.queue import queue_manager
-from core.websocket import ws_manager
+from core.websocket import ws_manager, redis_event_listener
 from db.models import init_db
 
 # Router imports
@@ -39,9 +37,14 @@ async def lifespan(_: FastAPI):
     logger.info("Initializing database with URL: %s", get_settings().database_url)
     await init_db()
     await queue_manager.connect()
+    
+    # Start Redis event listener in background
+    listener_task = asyncio.create_task(redis_event_listener())
+    
     try:
         yield
     finally:
+        listener_task.cancel()
         await queue_manager.close()
 
 
