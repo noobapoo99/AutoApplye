@@ -17,7 +17,8 @@ async def test_make_cache_key_deterministic():
     key3 = make_cache_key("autoapply", "test", "456")
     assert key1 == key2
     assert key1 != key3
-    assert len(key1) == 32
+    assert key1.startswith("cache:")
+    assert len(key1) == 38
 
 @pytest.mark.asyncio
 async def test_queue_names_all_exist():

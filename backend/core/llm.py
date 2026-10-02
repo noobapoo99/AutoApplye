@@ -108,16 +108,18 @@ class OllamaClient:
     async def embed(self, text: str) -> list[float]:
         import httpx
 
-        url = f"{settings.ollama_url.rstrip('/')}/api/embeddings"
+        url = f"{settings.ollama_url.rstrip('/')}/api/embed"
         payload = {
             "model": settings.ollama_embedding_model,
-            "prompt": text,
+            "input": text,
         }
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(url, json=payload)
             response.raise_for_status()
             data = response.json()
+            if "embeddings" in data:
+                return data["embeddings"][0]
             return data["embedding"]
 
 

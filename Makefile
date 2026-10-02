@@ -15,24 +15,24 @@ help:
 	@echo ""
 
 install:
-	cd backend && pip install -r requirements.txt
-	cd backend && playwright install chromium
+	cd backend && ../venv/bin/pip install -r requirements.txt
+	cd backend && ../venv/bin/playwright install chromium
 	cd frontend && npm install
 
 dev:
 	docker-compose up --build
 
 test:
-	cd backend && python -m pytest tests/ -v --asyncio-mode=auto
+	cd backend && ../venv/bin/python -m pytest tests/ -v --asyncio-mode=auto
 
 lint:
-	cd backend && python -m ruff check . --fix
+	cd backend && ../venv/bin/python -m ruff check . --fix
 
 migrate:
-	cd backend && alembic upgrade head
+	cd backend && ../venv/bin/alembic upgrade head
 
 demo:
-	python scripts/demo_pipeline.py --dry-run
+	./venv/bin/python scripts/demo_pipeline.py --dry-run
 
 logs:
 	docker-compose logs -f

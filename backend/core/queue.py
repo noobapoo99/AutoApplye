@@ -40,6 +40,16 @@ PRIMARY_TO_DLQ = {
     JD_FLAGGED: DLQ_APPLICATION,
 }
 
+QUEUES = {
+    "JD_RAW": JD_RAW,
+    "JD_ENRICHED": JD_ENRICHED,
+    "JD_READY": JD_READY,
+    "JD_FLAGGED": JD_FLAGGED,
+    "DLQ_EMAIL": DLQ_EMAIL,
+    "DLQ_APPLICATION": DLQ_APPLICATION,
+    "DLQ_RESEARCH": DLQ_RESEARCH,
+}
+
 
 class QueueManager:
     def __init__(self) -> None:
@@ -192,4 +202,5 @@ __all__ = [
     "JD_READY",
     "QueueManager",
     "queue_manager",
+    "QUEUES",
 ]

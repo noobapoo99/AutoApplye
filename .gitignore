@@ -28,6 +28,21 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Keep application source under frontend/src/lib tracked. The generic Python
+# `lib/` rule above should not apply to this directory.
+!frontend/src/lib/
+!frontend/src/lib/**
+
+# Test and local runtime output
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Generated application data (keep the checked-in base resume only)
+backend/data/resumes/
+backend/data/user_profile.json
+
 # Virtual environments
 venv/
 env/

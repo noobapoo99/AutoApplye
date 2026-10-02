@@ -54,6 +54,14 @@ class ConnectionManager:
 ws_manager = ConnectionManager()
 
 
+def event_payload(event_type: str, **kwargs: Any) -> dict[str, Any]:
+    return {
+        "event": event_type,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **kwargs,
+    }
+
+
 async def redis_event_listener() -> None:
     """
     Subscribes to the 'agent_events' Redis channel and broadcasts 

@@ -1,6 +1,8 @@
 import asyncio
 from contextlib import asynccontextmanager
+import logging
 from pathlib import Path
+import sys
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
